@@ -1,28 +1,44 @@
 use regex::Regex;
 use std::fs;
 
-struct Comment {
+struct Comment<'a> {
     line: usize,
-    text: String,
+    text: &'a str,
 }
 
-fn main() {
-    let contents = fs::read_to_string("example.java").unwrap();
+fn parse_comments<'a>(s: &'a str) -> Vec<Comment< 'a>> {
     let re = Regex::new(r"//.*|/\*[\s\S]*?\*/").unwrap();
-
     let mut comments = Vec::new();
 
-    for m in re.find_iter(&contents) {
+    for m in re.find_iter(s) {
         let start = m.start();
-        let line = contents[..start].matches("\n").count() + 1;
+        let line_num = s[..start].matches("\n").count() + 1;
+
         comments.push(Comment {
-            text: m.as_str().to_string(),
-            line: line
+            line: line_num,
+            text: m.as_str()
         });
     }
 
-    println!("{} comments found", comments.len());
+    comments
+}
+
+fn main() {
+    let contents = fs::read_to_string("example.java").expect("Could not read file");
+
+    let comments = parse_comments(&contents);
+
+    // print lines found
+    if comments.len() == 0 {
+        println!("0 comments found")
+    } else if comments.len() == 1 {
+        println!("{} comment found", comments.len())
+    } else {
+        println!("{} comments found", comments.len())
+    }
+
+    // print each comment
     for comment in comments {
-        print!("Line {}: {}", comment.line, comment.text);
+        println!("{}: {}", comment.line, comment.text);
     }
 }
