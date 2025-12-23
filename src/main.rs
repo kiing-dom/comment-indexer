@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::fs;
+use std::env;
 
 struct Comment<'a> {
     line: usize,
@@ -25,8 +26,20 @@ fn parse_comments<'a>(s: &'a str) -> Vec<Comment< 'a>> {
 
 fn main() {
     let contents = fs::read_to_string("example.java").expect("Could not read file");
-
     let comments = parse_comments(&contents);
+
+    let curr_dir = env::current_dir().expect("Failed to get current directory");
+
+    match fs::read_dir(curr_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    println!("{}", entry.path().display())
+                }
+            }
+        },
+        Err(e) => eprintln!("Error reading directory {}", e),
+    }
 
     // print lines found
     if comments.len() == 0 {
