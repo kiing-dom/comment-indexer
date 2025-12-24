@@ -5,19 +5,37 @@ use std::env;
 struct Comment<'a> {
     line: usize,
     text: &'a str,
+    file_name: &'a str,
 }
 
-fn parse_comments<'a>(s: &'a str) -> Vec<Comment< 'a>> {
+struct SourceFile {
+    name: String,
+    content: String,
+}
+
+fn parse_comments<'a>(file_name: &'a str, s: &'a str) -> Vec<Comment< 'a>> {
     let re = Regex::new(r"//.*|/\*[\s\S]*?\*/").unwrap();
     let mut comments = Vec::new();
+    let mut starts = vec![0];
+
+    for (i, c) in s.char_indices() {
+        if c == '\n' {
+            starts.push(i + 1);
+            dbg!(file_name, &starts);
+        }
+    }
 
     for m in re.find_iter(s) {
         let start = m.start();
-        let line_num = s[..start].matches("\n").count() + 1;
+        let line_num = match starts.binary_search(&start) {
+            Ok(idx) => idx + 1,
+            Err(idx) => idx,
+        };
 
         comments.push(Comment {
             line: line_num,
-            text: m.as_str()
+            text: m.as_str(),
+            file_name,
         });
     }
 
@@ -26,7 +44,7 @@ fn parse_comments<'a>(s: &'a str) -> Vec<Comment< 'a>> {
 
 fn main() {
     let mut comments = Vec::new();
-    let mut file_contents = Vec::new();
+    let mut files = Vec::new();
 
     let curr_dir = env::current_dir().expect("Failed to get current directory");
 
@@ -39,7 +57,10 @@ fn main() {
                 if path.is_file() {
                     if path.extension().and_then(|s| s.to_str()) == Some("java") {
                         if let Ok(content) = fs::read_to_string(&path) {
-                            file_contents.push(content);
+                            files.push(SourceFile{
+                                name: path.to_string_lossy().into_owned(),
+                                content: content,
+                            });
                         }
                     }
                 }
@@ -48,12 +69,14 @@ fn main() {
         Err(e) => eprintln!("Error reading directory {}", e),
     }
 
-    for content in &file_contents {
-        let found = parse_comments(content);
+    for file in &files {
+        
+        let found = parse_comments(&file.name, &file.content);
         for c in found {
             comments.push(Comment{
                 line: c.line,
-                text: c.text
+                text: c.text,
+                file_name: &file.name
             });
         }
     }
@@ -69,6 +92,6 @@ fn main() {
 
     // print each comment
     for comment in comments {
-        println!("{}: {}", comment.line, comment.text);
+        println!("{}, line {}: {}", comment.file_name, comment.line, comment.text,);
     }
 }
