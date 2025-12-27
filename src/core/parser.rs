@@ -17,7 +17,7 @@ pub enum CommentType {
 
 pub fn extract_comments_from_content(content: &str, language: Language) {
     match language {
-        Language::Java => extract_java_comments(content);
+        Language::Java => { extract_java_comments(content); }
     }
 }
 
@@ -50,7 +50,12 @@ fn extract_java_comments(content: &str) -> Vec<CommentMatch> {
                                     state = JavaParseState::SingleLineComment;
                                     chars.next();
                                 },
-                                '*' => { state = JavaParseState::MultiLineComment },
+                                '*' => {
+                                    comment_start = Some(byte_pos);
+                                    comment_text.clear();
+                                    state = JavaParseState::MultiLineComment;
+                                    chars.next();
+                                },
                                 _ => { continue }
                             }
                         }
@@ -72,6 +77,47 @@ fn extract_java_comments(content: &str) -> Vec<CommentMatch> {
                     comments.push(comment_match);
                     comment_text.clear();
                     state = JavaParseState::Code;
+                }
+            },
+            JavaParseState::MultiLineComment => {
+               match ch {
+                 '*' => {
+                    if let Some(&(_, next_ch)) = chars.peek() {
+                        if next_ch == '/' {
+                            let comment_match = CommentMatch {
+                                start_byte: comment_start.unwrap(),
+                                end_byte: byte_pos,
+                                text: comment_text.clone(),
+                                comment_type: CommentType::MultiLine,
+                            };
+
+                            comments.push(comment_match);
+                            comment_text.clear();
+                            state = JavaParseState::Code;
+                            chars.next();
+                        } else {
+                            comment_text.push(ch);
+                        }
+                    }
+                 },
+                 
+                 _ => {
+                    comment_text.push(ch);
+                 }
+               } 
+            },
+            JavaParseState::StringLiteral => {
+                match ch {
+                    '\\' => { chars.next(); },
+                    '"' => { state = JavaParseState::Code; },
+                    _ => { /* do nothing (keep scanning) */ }
+                }
+            },
+            JavaParseState::CharLiteral => {
+                match ch {
+                    '\\' => { chars.next(); },
+                    '\'' => { JavaParseState::Code; },
+                    _ => { /* do nothing (keep scanning) */}
                 }
             }
         }
