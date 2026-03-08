@@ -20,6 +20,9 @@ struct Args {
 
     #[arg(long)]
     cli: bool, // Flag to force CLI mode
+
+    #[arg(long)]
+    lang: Option<String>, // optional language filter e.g. --lang rs
 }
 
 fn main() {
@@ -44,6 +47,16 @@ fn main() {
         };
         
         let file_paths = core::discover::find_all_source_files(&directory);
+
+        // if the lang flag is used, search for comments with that lang, else we find all source files
+        let file_paths = match &args.lang {
+            Some(lang) => file_paths
+                .into_iter()
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some(lang.as_str()))
+                .collect(),
+            None => file_paths,
+        };
+
         let files = core::source::load_files(&file_paths);
         let comments = core::engine::extract_comments(&files);
 
