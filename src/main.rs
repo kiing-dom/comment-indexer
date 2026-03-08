@@ -43,7 +43,7 @@ fn main() {
             search::SearchMode::Or
         };
         
-        let file_paths = core::discover::find_source_files(&directory, "java");
+        let file_paths = core::discover::find_all_source_files(&directory);
         let files = core::source::load_files(&file_paths);
         let comments = core::engine::extract_comments(&files);
 
