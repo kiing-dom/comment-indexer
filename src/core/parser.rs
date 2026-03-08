@@ -28,7 +28,7 @@ pub fn extract_comments_from_content(content: &str, language: Language) -> Vec<C
         Language::Python => extract_python_comments(content),
         Language::JavaScript => extract_javascript_comments(content),
         Language::TypeScript => extract_javascript_comments(content), // Same as JS
-        Language::Rust => extract_java_comments(content), // Same as Java
+        Language::Rust => extract_rust_comments(content),
     }
 }
 
@@ -106,6 +106,8 @@ fn extract_java_comments(content: &str) -> Vec<CommentMatch> {
                     comments.push(comment_match);
                     comment_text.clear();
                     state = JavaParseState::Code;
+                } else {
+                    comment_text.push(ch)
                 }
             },
             JavaParseState::MultiLineComment => {
@@ -249,4 +251,124 @@ fn extract_python_comments(content: &str) -> Vec<CommentMatch> {
 fn extract_javascript_comments(content: &str) -> Vec<CommentMatch> {
     // JavaScript and TypeScript use same comment syntax as Java: // and /* */
     extract_java_comments(content)
+}
+
+enum RustParseState {
+    Code,
+    SingleLineComment,
+    MultiLineComment,
+    StringLiteral,
+}
+
+fn extract_rust_comments(content: &str) -> Vec<CommentMatch> {
+    let mut comments = Vec::new();
+    let mut state = RustParseState::Code;
+    let mut chars = content.char_indices().peekable();
+
+    let mut comment_start: Option<usize> = None;
+    let mut comment_text = String::new();
+
+    while let Some((byte_pos, ch)) = chars.next() {
+        match state {
+            RustParseState::Code => {
+                match ch {
+                    '/' => {
+                        if let Some(&(_, next_ch)) = chars.peek() {
+                            match next_ch {
+                                '/' => {
+                                    comment_start = Some(byte_pos);
+                                    comment_text.clear();
+                                    state = RustParseState::SingleLineComment;
+                                    chars.next();
+                                },
+                                '*' => {
+                                    comment_start = Some(byte_pos);
+                                    comment_text.clear();
+                                    state = RustParseState::MultiLineComment;
+                                    chars.next();
+                                },
+                                _ => {}
+                            }
+                        }
+                    },
+                    '"' => { state = RustParseState::StringLiteral; },
+                    '\'' => {
+                        // Distinguish lifetimes ('a, '_) from char literals ('x')
+                        // Lifetimes: ' followed by a letter or _ but NOT closed with another '
+                        if let Some(&(_, next_ch)) = chars.peek() {
+                            if next_ch.is_alphabetic() || next_ch == '_' {
+                                // peek two ahead - if it's not a closing quote it's a lifetime
+                                // we consume the next char and check the one after
+                                chars.next(); // consume the letter
+                                if let Some(&(_, after)) = chars.peek() {
+                                    if after == '\'' {
+                                        // it's a single char literal e.g. 'a'
+                                        chars.next(); // consume closing '
+                                    }
+                                    // otherwise it's a lifetime, just continue
+                                }
+                            } else {
+                                // char literal like '\n', ' ', etc. - consume until closing '
+                                chars.next(); // consume the char (or backslash)
+                                // if escaped, consume one more
+                                if next_ch == '\\' {
+                                    chars.next();
+                                }
+                                // consume closing '
+                                if let Some(&(_, '\'')) = chars.peek() {
+                                    chars.next();
+                                }
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            },
+            RustParseState::SingleLineComment => {
+                if ch == '\n' {
+                    comments.push(CommentMatch {
+                        start_byte: comment_start.unwrap(),
+                        end_byte: byte_pos,
+                        text: comment_text.clone(),
+                        comment_type: CommentType::SingleLine,
+                    });
+                    comment_text.clear();
+                    state = RustParseState::Code;
+                } else {
+                    comment_text.push(ch);
+                }
+            },
+            RustParseState::MultiLineComment => {
+                match ch {
+                    '*' => {
+                        if let Some(&(_, next_ch)) = chars.peek() {
+                            if next_ch == '/' {
+                                comments.push(CommentMatch {
+                                    start_byte: comment_start.unwrap(),
+                                    end_byte: byte_pos,
+                                    text: comment_text.clone(),
+                                    comment_type: CommentType::MultiLine,
+                                });
+                                comment_text.clear();
+                                state = RustParseState::Code;
+                                chars.next();
+                            } else {
+                                comment_text.push(ch);
+                            }
+                        }
+                    },
+                    _ => { comment_text.push(ch); }
+                }
+            },
+            RustParseState::StringLiteral => {
+                match ch {
+                    '\\' => { chars.next(); }, // skip escaped char
+                    '"' => { state = RustParseState::Code; },
+                    _ => {}
+                }
+            },
+        }
+    }
+
+    comments
 }
