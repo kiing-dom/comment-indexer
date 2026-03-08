@@ -18,6 +18,7 @@ pub struct TuiState<'a> {
     selected: usize,
     should_quit: bool,
     strict_mode: bool,
+    needs_redraw: bool,
 }
 
 pub fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,13 +49,19 @@ fn run_tui_loop(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> R
         selected: 0,
         should_quit: false,
         strict_mode: false,
+        needs_redraw: false,
    };
 
    while !state.should_quit {
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                handle_key_event(& mut state, &comments, key);
+                handle_key_event(&mut state, &comments, key);
             }
+        }
+
+        if state.needs_redraw {
+            terminal.clear()?;
+            state.needs_redraw = false;
         }
 
         terminal.draw(|frame| {
@@ -82,6 +89,7 @@ fn handle_key_event<'a>(state: &mut TuiState<'a>, comments: &'a [Comment<'a>], k
         KeyCode::Enter => {
             if let Some(comment) = state.results.get(state.selected) {
                 open_in_editor(comment.file_path, comment.line);
+                state.needs_redraw = true;
             }
         }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -185,15 +193,13 @@ fn render_status_line(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, s
 fn open_in_editor(path: &std::path::PathBuf, line: usize) {
     let editor = std::env::var("EDITOR")
         .or_else(|_| std::env::var("VISUAL"))
-        .unwrap_or_else(|_| "vi".to_string());
-
-    let mut cmd = std::process::Command::new(&editor);
-
-    // most editors support +<line> to jump to a line but vs code uses --goto file:line
-    match editor.as_str() {
-        "code" | "code-insiders" => { cmd.arg("--goto").arg(format!("{}:{}", path.display(), line)); }
-        _ => { cmd.arg(format!("+{}", line)).arg(path); }
-    };
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "code".to_string()
+            } else {
+                "vi".to_string()
+            }
+        });
 
     // leave TUI mode before switching to editor
     let _ = crossterm::terminal::disable_raw_mode();
@@ -201,8 +207,27 @@ fn open_in_editor(path: &std::path::PathBuf, line: usize) {
         &mut std::io::stdout(),
         crossterm::terminal::LeaveAlternateScreen
     );
-    
-    let _ = cmd.status();
+
+    let _ = if cfg!(windows) {
+        let full_cmd = match editor.as_str() {
+            "code" | "code-insiders" => format!("{} --reuse-window --goto {}:{}", editor, path.display(), line),
+            _ => format!("{} +{} {}", editor, line, path.display()),
+        };
+        std::process::Command::new("cmd")
+            .args(["/C", &full_cmd])
+            .status()
+    } else {
+        let mut cmd = std::process::Command::new(&editor);
+        match editor.as_str() {
+            "code" | "code-insiders" => {
+                cmd.arg("--reuse-window")
+                   .arg("--goto")
+                   .arg(format!("{}:{}", path.display(), line));
+            }
+            _ => { cmd.arg(format!("+{}", line)).arg(path); }
+        };
+        cmd.status()
+    };
 
     // restore TUI after editor exits
     let _ = crossterm::terminal::enable_raw_mode();
