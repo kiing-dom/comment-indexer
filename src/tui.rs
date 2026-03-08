@@ -79,6 +79,11 @@ fn handle_key_event<'a>(state: &mut TuiState<'a>, comments: &'a [Comment<'a>], k
             state.strict_mode = !state.strict_mode;
             update_search_results(state, comments);
         }
+        KeyCode::Enter => {
+            if let Some(comment) = state.results.get(state.selected) {
+                open_in_editor(comment.file_path, comment.line);
+            }
+        }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.should_quit = true;
         }
@@ -172,7 +177,37 @@ fn render_results_list(frame: &mut Frame, area: Rect, state: &TuiState) {
 }
 
 fn render_status_line(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, state: &TuiState) {
-    let status = format!("{} matches", state.results.len());
+    let status = format!("{} matches | Tab: toggle strict | Enter: open in $EDITOR", state.results.len());
     let status_paragraph = Paragraph::new(status);
     frame.render_widget(status_paragraph, area);
+}
+
+fn open_in_editor(path: &std::path::PathBuf, line: usize) {
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    let mut cmd = std::process::Command::new(&editor);
+
+    // most editors support +<line> to jump to a line but vs code uses --goto file:line
+    match editor.as_str() {
+        "code" | "code-insiders" => { cmd.arg("--goto").arg(format!("{}:{}", path.display(), line)); }
+        _ => { cmd.arg(format!("+{}", line)).arg(path); }
+    };
+
+    // leave TUI mode before switching to editor
+    let _ = crossterm::terminal::disable_raw_mode();
+    let _ = crossterm::ExecutableCommand::execute(
+        &mut std::io::stdout(),
+        crossterm::terminal::LeaveAlternateScreen
+    );
+    
+    let _ = cmd.status();
+
+    // restore TUI after editor exits
+    let _ = crossterm::terminal::enable_raw_mode();
+    let _ = crossterm::ExecutableCommand::execute(
+        &mut std::io::stdout(),
+        crossterm::terminal::EnterAlternateScreen
+    );
 }

@@ -5,6 +5,7 @@ pub struct Comment<'a> {
     pub line: usize,
     pub text: &'a str,
     pub file_name: &'a str,
+    pub file_path: &'a std::path::PathBuf,
 }
 
 pub fn extract_comments<'a>(files: &'a [SourceFile]) -> Vec<Comment<'a>> {
@@ -32,6 +33,7 @@ pub fn extract_comments<'a>(files: &'a [SourceFile]) -> Vec<Comment<'a>> {
                     line: line_num,
                     text: text,
                     file_name: &file.name,
+                    file_path: &file.path,
                 });
             }
         }
