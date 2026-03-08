@@ -5,6 +5,7 @@ pub enum Language {
     Python,
     JavaScript,
     TypeScript,
+    Rust
 }
 
 pub struct CommentMatch {
@@ -27,6 +28,7 @@ pub fn extract_comments_from_content(content: &str, language: Language) -> Vec<C
         Language::Python => extract_python_comments(content),
         Language::JavaScript => extract_javascript_comments(content),
         Language::TypeScript => extract_javascript_comments(content), // Same as JS
+        Language::Rust => extract_java_comments(content), // Same as Java
     }
 }
 
@@ -48,6 +50,7 @@ enum PythonParseState {
 pub fn detect_language(file_path: &Path) -> Option<Language> {
     match file_path.extension()?.to_str()? {
         "java" => Some(Language::Java),
+        "rs" => Some(Language::Rust),
         "py" => Some(Language::Python),
         "js" => Some(Language::JavaScript),
         "ts" | "tsx" => Some(Language::TypeScript),
